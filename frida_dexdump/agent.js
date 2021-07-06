@@ -70,19 +70,21 @@ function get_maps_end(maps, range_base, range_end) {
 function verify(dexptr, range, enable_verify_maps) {
 
     if (range != null) {
+        //获取符合dex文件头格式的内存结束地址
         var range_end = range.base.add(range.size);
         // verify header_size
+        //如果不足dex文件头的大小, 跳过
         if (dexptr.add(0x70) > range_end) {
             return false;
         }
 
-        // In runtime, the fileSize is can to be clean, so it's not trust.
+        // 运行期间，dex文件头中dex文件的大小可以被清除，因此直接获取dex文件大小不可信
         // verify file_size
         // var dex_size = dexptr.add(0x20).readUInt();
         // if (dexptr.add(dex_size) > range_end) {
         //     return false;
         // }
-
+        //通过map_items字段进行校验
         if (enable_verify_maps) {
 
             var maps_address = get_maps_address(dexptr, range.base, range_end);
@@ -105,33 +107,41 @@ function verify(dexptr, range, enable_verify_maps) {
 
 }
 
+//定义RPC接口
 rpc.exports = {
+    //内存dump的地址和大小
     memorydump: function memorydump(address, size) {
         return new NativePointer(address).readByteArray(size);
     },
+    //是否开启深度校验
     switchmode: function switchmode(bool) {
         enable_deep_search = bool;
     },
+    //扫描内存中的dex文件
     scandex: function scandex() {
         var result = [];
+        //获取进程可读属性内存
         Process.enumerateRanges('r--').forEach(function (range) {
             try {
+                //从可读属性内存中判断是否有符合dex文件头格式的数据
                 Memory.scanSync(range.base, range.size, "64 65 78 0a 30 ?? ?? 00").forEach(function (match) {
-
+                    //如果为系统的dex文件，跳过
                     if (range.file && range.file.path
                         && (// range.file.path.startsWith("/data/app/") ||
                             range.file.path.startsWith("/data/dalvik-cache/") ||
                             range.file.path.startsWith("/system/"))) {
                         return;
                     }
-
+                    //去除不符合基本校验的dex文件
                     if (verify(match.address, range, false)) {
+                        //获取dex文件的大小
                         var dex_size = get_dex_real_size(match.address, range.base, range.base.add(range.size));
+                        //保存内存中的dex文件
                         result.push({
                             "addr": match.address,
                             "size": dex_size
                         });
-
+                        //如果开启深度校验模式
                         var max_size = range.size - match.address.sub(range.base);
                         if (enable_deep_search && max_size != dex_size) {
                             result.push({
