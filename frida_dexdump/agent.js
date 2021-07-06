@@ -8,11 +8,15 @@
 var enable_deep_search = false;
 
 function verify_by_maps(dexptr, mapsptr) {
+    //0x34为map_offset
     var maps_offset = dexptr.add(0x34).readUInt();
     var maps_size = mapsptr.readUInt();
     for (var i = 0; i < maps_size; i++) {
+        //获取map_list中的类型
         var item_type = mapsptr.add(4 + i * 0xC).readU16();
+        //kDexTypeMapList = 0x1000
         if (item_type === 4096) {
+            //比较map_list中map_item中的偏移是否一致
             var map_offset = mapsptr.add(4 + i * 0xC + 8).readUInt();
             if (maps_offset === map_offset) {
                 return true;
@@ -24,27 +28,29 @@ function verify_by_maps(dexptr, mapsptr) {
 
 
 function get_dex_real_size(dexptr, range_base, range_end) {
+    //获取dex文件头中fileSize的大小
     var dex_size = dexptr.add(0x20).readUInt();
-
+    //获取maps_item起始地址, >= data
     var maps_address = get_maps_address(dexptr, range_base, range_end);
     if (!maps_address) {
         return dex_size;
     }
-
+    //获取map_item结束地址
     var maps_end = get_maps_end(maps_address, range_base, range_end);
     if (!maps_end) {
         return dex_size;
     }
-
-    return maps_end - dexptr
+    //获取dex文件大小
+    return maps_end - dexptr;
 }
 
 function get_maps_address(dexptr, range_base, range_end) {
+    //dex文件头map_off字段
     var maps_offset = dexptr.add(0x34).readUInt();
     if (maps_offset === 0) {
         return null;
     }
-
+    //map_item文件偏移
     var maps_address = dexptr.add(maps_offset);
     if (maps_address < range_base || maps_address > range_end) {
         return null;
@@ -54,15 +60,18 @@ function get_maps_address(dexptr, range_base, range_end) {
 }
 
 function get_maps_end(maps, range_base, range_end) {
+    //获取map_list的数量
     var maps_size = maps.readUInt();
     if (maps_size < 2 || maps_size > 50) {
         return null;
     }
+    
+    //获取map_item结束地址 = 起始地址 + sizeof(u4)(map_size) + sizeof(map_list)
     var maps_end = maps.add(maps_size * 0xC + 4);
     if (maps_end < range_base || maps_end > range_end) {
         return null;
     }
-
+    
     return maps_end;
 }
 
@@ -86,12 +95,12 @@ function verify(dexptr, range, enable_verify_maps) {
         // }
         //通过map_items字段进行校验
         if (enable_verify_maps) {
-
+            //获取map_item起始地址
             var maps_address = get_maps_address(dexptr, range.base, range_end);
             if (!maps_address) {
                 return false;
             }
-
+            //获取map_item结束地址
             var maps_end = get_maps_end(maps_address, range.base, range_end);
             if (!maps_end) {
                 return false;
@@ -123,7 +132,7 @@ rpc.exports = {
         //获取进程可读属性内存
         Process.enumerateRanges('r--').forEach(function (range) {
             try {
-                //从可读属性内存中判断是否有符合dex文件头格式的数据
+                //从可读属性内存中判断是否有符合dex文件头格式的数据 "dex\n0350" , 035是dex文件格式的版本 
                 Memory.scanSync(range.base, range.size, "64 65 78 0a 30 ?? ?? 00").forEach(function (match) {
                     //如果为系统的dex文件，跳过
                     if (range.file && range.file.path
@@ -151,7 +160,7 @@ rpc.exports = {
                         }
                     }
                 });
-
+                //深度扫描模式, 从满足上述条件的内存块中继续过滤
                 if (enable_deep_search) {
                     Memory.scanSync(range.base, range.size, "70 00 00 00").forEach(function (match) {
                         var dex_base = match.address.sub(0x3C);
